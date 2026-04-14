@@ -719,8 +719,7 @@ function AdminDashboard() {
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
-      const url = importCampaign ? `/api/import.php?campaign=${encodeURIComponent(importCampaign)}` : '/api/import.php';
-      const res = await safeFetch(url, {
+      const res = await safeFetch('/api/import.php', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -948,28 +947,12 @@ function AdminDashboard() {
         </div>
         <div className="flex flex-wrap items-center justify-center gap-2 md:gap-3">
           <button 
-            onClick={() => setShowCampaignsModal(true)}
-            className="bg-brand-orange hover:bg-brand-orange/90 text-white px-3 py-2 md:px-4 md:py-2 rounded-xl text-xs md:text-sm font-bold flex items-center gap-2 transition-all"
-          >
-            <MapPin size={16} /> Campanhas
-          </button>
-          <button 
             onClick={downloadTemplate}
             className="bg-gray-100 hover:bg-gray-200 text-dark px-3 py-2 md:px-4 md:py-2 rounded-xl text-xs md:text-sm font-bold flex items-center gap-2 transition-all"
             title="Baixar planilha modelo para importação"
           >
             <FileText size={16} /> Modelo
           </button>
-          <select 
-            className="px-3 py-2 md:px-4 md:py-2 rounded-xl border border-dark/10 text-xs md:text-sm font-bold text-dark"
-            value={importCampaign}
-            onChange={e => setImportCampaign(e.target.value)}
-          >
-            <option key="default" value="">Usar cidade da planilha</option>
-            {campaigns.map(c => (
-              <option key={c.id} value={`${c.end_date}: ${c.city}`}>{`${c.end_date}: ${c.city}`}</option>
-            ))}
-          </select>
           <label className={`bg-primary hover:bg-primary/90 text-white px-3 py-2 md:px-4 md:py-2 rounded-xl text-xs md:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${isImporting ? 'opacity-50 pointer-events-none' : ''}`}>
             <Upload size={16} /> {isImporting ? 'Importando...' : 'Importar'}
             <input 
@@ -1036,15 +1019,6 @@ function AdminDashboard() {
           >
             <option key="default" value="">Todas as Cidades (Endereço)</option>
             {Array.from(new Set(registrations.map(r => r.city))).sort().map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <select 
-            className="px-4 py-3 rounded-xl border border-dark/10 focus:outline-none focus:ring-2 focus:ring-secondary/20 focus:border-secondary transition-all text-dark"
-            value={filterSpecies}
-            onChange={e => setFilterSpecies(e.target.value)}
-          >
-            <option key="" value="">Todas as Espécies</option>
-            <option key="Cachorro" value="Cachorro">Cachorro</option>
-            <option key="Gato" value="Gato">Gato</option>
           </select>
         </div>
 
@@ -1177,145 +1151,6 @@ function AdminDashboard() {
         </div>
       </main>
 
-      {/* Campaigns Modal */}
-      {showCampaignsModal && (
-        <div className="fixed inset-0 bg-dark/50 flex items-center justify-center z-[100] p-4">
-          <div className="bg-white rounded-3xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 md:p-8">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-display italic font-bold text-dark uppercase tracking-tight">Gerenciar Campanhas</h2>
-              <button onClick={() => setShowCampaignsModal(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
-                <X size={24} className="text-dark/50" />
-              </button>
-            </div>
-
-            <form 
-              onSubmit={async (e) => {
-                e.preventDefault();
-                try {
-                  const token = sessionStorage.getItem('admin_token') || '';
-                  const res = await safeFetch('/api/campaigns.php', {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      'Authorization': token
-                    },
-                    body: JSON.stringify(newCampaign)
-                  });
-                  if (res.ok) {
-                    fetchCampaigns();
-                    setNewCampaign({ city: '', type: 'ELPA', end_date: '' });
-                  } else {
-                    alert('Erro ao adicionar campanha');
-                  }
-                } catch (error) {
-                  console.error(error);
-                }
-              }}
-              className="bg-paper p-4 md:p-6 rounded-2xl border border-dark/5 mb-8 space-y-4"
-            >
-              <h3 className="font-bold text-dark mb-2">Adicionar Nova Campanha</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="text-xs font-bold text-dark/50 uppercase mb-1 block">Cidade</label>
-                  <select 
-                    required
-                    value={newCampaign.city}
-                    onChange={e => setNewCampaign({...newCampaign, city: e.target.value})}
-                    className="w-full px-3 py-2 rounded-xl border border-dark/10 focus:border-secondary focus:ring-0"
-                  >
-                    <option value="" disabled>Selecione uma cidade</option>
-                    {CIDADES_SP.map(city => (
-                      <option key={city} value={city}>{city}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-dark/50 uppercase mb-1 block">Tipo</label>
-                  <select 
-                    value={newCampaign.type}
-                    onChange={e => setNewCampaign({...newCampaign, type: e.target.value})}
-                    className="w-full px-3 py-2 rounded-xl border border-dark/10 focus:border-secondary focus:ring-0"
-                  >
-                    <option value="ELPA">ELPA</option>
-                    <option value="IBEA">IBEA</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-dark/50 uppercase mb-1 block">Data</label>
-                  <input 
-                    type="date" 
-                    required
-                    value={newCampaign.end_date}
-                    onChange={e => setNewCampaign({...newCampaign, end_date: e.target.value})}
-                    className="w-full px-3 py-2 rounded-xl border border-dark/10 focus:border-secondary focus:ring-0"
-                  />
-                </div>
-              </div>
-              <button type="submit" className="w-full bg-secondary hover:bg-dark text-white font-bold py-2 rounded-xl transition-colors">
-                Adicionar Campanha
-              </button>
-            </form>
-
-            <div className="space-y-4">
-              <h3 className="font-bold text-dark">Campanhas Cadastradas</h3>
-              {campaigns.length === 0 ? (
-                <p className="text-dark/50 text-sm">Nenhuma campanha cadastrada.</p>
-              ) : (
-                <div className="divide-y divide-dark/5">
-                  {campaigns.map(c => (
-                    <div key={c.id} className="py-4 flex items-center justify-between gap-4">
-                      <div>
-                        <p className="font-bold text-dark flex items-center gap-2">
-                          {c.end_date.split('-').reverse().join('/')}: {c.city}
-                          <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-bold", c.type === 'ELPA' ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700")}>
-                            {c.type}
-                          </span>
-                          {!c.is_active && (
-                            <span className="bg-red-100 text-red-700 text-[10px] px-2 py-0.5 rounded-full font-bold">
-                              Inativa
-                            </span>
-                          )}
-                        </p>
-                        <p className="text-sm text-dark/50">Até: {c.end_date.split('-').reverse().join('/')}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button 
-                          onClick={async () => {
-                            try {
-                              const token = sessionStorage.getItem('admin_token') || '';
-                              const res = await safeFetch('/api/campaigns.php', {
-                                method: 'PUT',
-                                headers: {
-                                  'Content-Type': 'application/json',
-                                  'Authorization': token
-                                },
-                                body: JSON.stringify({ ...c, is_active: !c.is_active })
-                              });
-                              if (res.ok) fetchCampaigns();
-                            } catch (error) {
-                              console.error(error);
-                            }
-                          }}
-                          className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition-colors", c.is_active ? "bg-red-100 text-red-700 hover:bg-red-200" : "bg-green-100 text-green-700 hover:bg-green-200")}
-                        >
-                          {c.is_active ? 'Desativar' : 'Ativar'}
-                        </button>
-                        <button 
-                          onClick={() => deleteCampaign(c.id)}
-                          className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 transition-colors"
-                          title="Excluir Campanha"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
