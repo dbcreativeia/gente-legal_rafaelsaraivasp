@@ -131,60 +131,12 @@ const Select = React.forwardRef<HTMLSelectElement, React.SelectHTMLAttributes<HT
 
 
 
-// Helper function to handle PHP responses in dev environment (AI Studio / Vite)
+// Helper function to handle API requests
+const API_BASE_URL = 'https://gentelegal.rafaelsaraivasp.com.br';
+
 const safeFetch = async (url: string, options?: RequestInit) => {
-  const res = await fetch(url, options);
-  
-  // Clone the response so we can read the text without consuming the original body
-  const clone = res.clone();
-  const text = await clone.text();
-  
-  if (text.trim().startsWith('<?php')) {
-    console.warn(`[Dev Mode] Mocking response for ${url}`);
-    let mockData: any = { success: true };
-    
-    if (url.includes('campaigns.php')) {
-      if (options?.method === 'POST' || options?.method === 'PUT' || options?.method === 'DELETE') {
-        mockData = { success: true };
-      } else {
-        mockData = [
-          { id: 1, city: 'Orindiúva', type: 'ELPA', end_date: '2026-04-02', is_active: true },
-          { id: 2, city: 'Olímpia', type: 'ELPA', end_date: '2026-04-04', is_active: true },
-          { id: 3, city: 'Severínia', type: 'ELPA', end_date: '2026-04-06', is_active: true },
-          { id: 4, city: 'Pindorama', type: 'ELPA', end_date: '2026-04-07', is_active: true }
-        ];
-      }
-    } else if (url.includes('quotas.php')) {
-      mockData = { success: true, counts: {} };
-    } else if (url.includes('registrations.php')) {
-      if (options?.method === 'DELETE') {
-        mockData = { success: true };
-      } else {
-        const token = (options?.headers as any)?.['X-Admin-Password'] || (options?.headers as any)?.['Authorization'];
-        if (token === 'admin2026') {
-          mockData = [
-            { id: 1, name: 'João Silva', cpf: '123.456.789-00', whatsapp: '(11) 99999-9999', created_at: new Date().toISOString(), is_cancelled: false },
-            { id: 2, name: 'Maria Souza', cpf: '987.654.321-00', whatsapp: '(11) 88888-8888', created_at: new Date().toISOString(), is_cancelled: false }
-          ];
-        } else {
-          return new Response(JSON.stringify({ error: 'Não autorizado' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
-        }
-      }
-    } else if (url.includes('register.php')) {
-      mockData = { success: true, id: Math.floor(Math.random() * 1000) };
-    } else if (url.includes('toggle_status.php')) {
-      mockData = { success: true };
-    } else if (url.includes('import.php')) {
-      mockData = { success: true, message: 'Importação simulada concluída!' };
-    }
-    
-    return new Response(JSON.stringify(mockData), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
-  
-  return res;
+  const fetchUrl = url.startsWith('/api/') ? `${API_BASE_URL}${url}` : url;
+  return fetch(fetchUrl, options);
 };
 
 function LandingPage() {
