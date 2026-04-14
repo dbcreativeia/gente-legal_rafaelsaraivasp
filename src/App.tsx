@@ -661,17 +661,10 @@ function AdminDashboard() {
   const [registrations, setRegistrations] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [filterCity, setFilterCity] = useState('');
-  const [filterCastrationCity, setFilterCastrationCity] = useState('');
-  const [filterSpecies, setFilterSpecies] = useState('');
-  const [filterSex, setFilterSex] = useState('');
   const [filterStatus, setFilterStatus] = useState('active');
   const [isImporting, setIsImporting] = useState(false);
   const [loading, setLoading] = useState(true);
   
-  const [campaigns, setCampaigns] = useState<any[]>([]);
-  const [showCampaignsModal, setShowCampaignsModal] = useState(false);
-  const [newCampaign, setNewCampaign] = useState({ city: '', type: 'ELPA', end_date: '' });
-  const [importCampaign, setImportCampaign] = useState('');
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
   const downloadTemplate = () => {
@@ -791,18 +784,6 @@ function AdminDashboard() {
     }
   };
 
-  const fetchCampaigns = async () => {
-    try {
-      const res = await safeFetch('/api/campaigns.php');
-      if (res.ok) {
-        const data = await res.json();
-        setCampaigns(data);
-      }
-    } catch (error) {
-      console.error("Erro ao buscar campanhas", error);
-    }
-  };
-
   const fetchRegistrations = async () => {
     try {
       const token = sessionStorage.getItem('admin_token') || '';
@@ -815,7 +796,6 @@ function AdminDashboard() {
       if (res.ok) {
         const data = await res.json();
         setRegistrations(data);
-        fetchCampaigns();
       } else {
         setIsAuthenticated(false);
         sessionStorage.removeItem('admin_auth');
@@ -876,29 +856,6 @@ function AdminDashboard() {
     } catch (error) {
       console.error('Erro ao excluir cadastro', error);
       alert('Erro ao excluir cadastro.');
-    }
-  };
-
-  const deleteCampaign = async (id: number) => {
-    if (!window.confirm('Tem certeza que deseja excluir permanentemente esta campanha? Esta ação não pode ser desfeita.')) return;
-    
-    try {
-      const token = sessionStorage.getItem('admin_token');
-      const res = await safeFetch(`/api/campaigns.php?id=${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': token || ''
-        }
-      });
-
-      if (res.ok) {
-        fetchCampaigns();
-      } else {
-        alert('Erro ao excluir campanha.');
-      }
-    } catch (error) {
-      console.error('Erro ao excluir campanha', error);
-      alert('Erro ao excluir campanha.');
     }
   };
 

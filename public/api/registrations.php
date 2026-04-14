@@ -35,10 +35,6 @@ try {
         
         $pdo->beginTransaction();
         
-        // Delete animals first to avoid foreign key constraints
-        $stmtAnimals = $pdo->prepare("DELETE FROM animals WHERE registration_id = ?");
-        $stmtAnimals->execute([$id]);
-        
         // Delete registration
         $stmtReg = $pdo->prepare("DELETE FROM registrations WHERE id = ?");
         $stmtReg->execute([$id]);
@@ -49,24 +45,11 @@ try {
         exit;
     }
     
-    // Busca os cadastros e os animais de cada um
+    // Busca os cadastros
     $stmt = $pdo->query("
-        SELECT 
-            r.*, 
-            r.castration_city,
-            a.id as animal_id,
-            a.name as animal_name,
-            a.species as animal_species,
-            a.sex as animal_sex,
-            a.color as animal_color,
-            a.is_vaccinated as animal_is_vaccinated,
-            a.is_dewormed as animal_is_dewormed,
-            a.has_had_surgery as animal_has_had_surgery,
-            a.takes_continuous_medication as animal_takes_continuous_medication,
-            a.medication_name as animal_medication_name
-        FROM registrations r
-        LEFT JOIN animals a ON r.id = a.registration_id
-        ORDER BY r.created_at DESC
+        SELECT *
+        FROM registrations
+        ORDER BY created_at DESC
     ");
     
     $registrations = $stmt->fetchAll(PDO::FETCH_ASSOC);
