@@ -54,6 +54,56 @@ try {
     // Confirma as inserções
     $pdo->commit();
     
+    // Configuração da API de Conversões do Meta (Server-Side)
+    $pixel_id = "2056890081836012";
+    $access_token = "EAAEBdXO5gt0BRUZB3L5ZAkTQz6ePCyuLeSXzZBQ5Yj45yfWCHS1gIO5y8nDqZAU1UYctbFpIfXwcU2LEo9KLy61fZCEZBR8u4QR8Vj9xqHMHaQLRRMWNdRa53vTMk4J2G9RHaZBQbJZBKtGvbULA643lE4xn5cJZAllOyitkg02OvwHANkDVxl1sULHDRlLyluwZDZD";
+    $client_ip = $_SERVER['REMOTE_ADDR'] ?? '';
+    $client_userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+
+    function hashData($data) {
+        if (empty($data)) return null;
+        return hash('sha256', strtolower(trim($data)));
+    }
+
+    $nameParts = explode(" ", trim($owner['name']));
+    $firstName = count($nameParts) > 0 ? $nameParts[0] : '';
+    $lastName = count($nameParts) > 1 ? end($nameParts) : '';
+
+    $event_data = [
+        "data" => [
+            [
+                "event_name" => "CompleteRegistration",
+                "event_time" => time(),
+                "action_source" => "website",
+                "event_id" => "reg_" . $registrationId,
+                "user_data" => [
+                    "client_ip_address" => $client_ip,
+                    "client_user_agent" => $client_userAgent,
+                    "em" => [hashData($owner['email'])],
+                    "ph" => [hashData(preg_replace('/[^0-9]/', '', $owner['whatsapp']))],
+                    "fn" => [hashData($firstName)],
+                    "ln" => [hashData($lastName)],
+                    "ct" => [hashData($owner['city'])],
+                    "st" => [hashData('sp')],
+                    "zp" => [hashData(preg_replace('/[^0-9]/', '', $owner['cep']))],
+                    "country" => [hashData('br')]
+                ],
+                "custom_data" => [
+                    "content_name" => "Adesivo"
+                ]
+            ]
+        ]
+    ];
+
+    $ch = curl_init("https://graph.facebook.com/v19.0/{$pixel_id}/events?access_token={$access_token}");
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($event_data));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 3); // Timeout rápido para não prender o formulário do usuário
+    curl_exec($ch);
+    curl_close($ch);
+
     echo json_encode(['success' => true, 'id' => $registrationId, 'message' => 'Cadastro efetuado com sucesso!']);
     exit;
 

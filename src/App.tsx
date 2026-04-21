@@ -176,7 +176,7 @@ function LandingPage() {
           
           // Dispara o evento no Google Analytics
           if (typeof window !== 'undefined' && (window as any).gtag) {
-            (window as any).gtag('event', 'cep_filled', {
+            (window as any).gtag('event', 'cep_preenchido_adesivo', {
               event_category: 'Formulário',
               event_label: 'CEP Preenchido',
               city: data.localidade
@@ -194,7 +194,7 @@ function LandingPage() {
   const onSubmit = async (data: RegistrationForm) => {
     // Dispara o evento no Google Analytics
     if (typeof window !== 'undefined' && (window as any).gtag) {
-      (window as any).gtag('event', 'form_submit_attempt', {
+      (window as any).gtag('event', 'tentativa_cadastro_adesivo', {
         event_category: 'Formulário',
         event_label: 'Tentativa de Cadastro'
       });
@@ -219,11 +219,11 @@ function LandingPage() {
       if (response.ok && result.success) {
         // Dispara o evento de CompleteRegistration no Pixel (Frontend) com o mesmo event_id do backend
         if (typeof window !== 'undefined' && (window as any).fbq) {
-          (window as any).fbq('track', 'CompleteRegistration', {}, { eventID: 'reg_' + result.id });
+          (window as any).fbq('track', 'CompleteRegistration', { content_name: 'Adesivo' }, { eventID: 'reg_' + result.id });
         }
         // Dispara o evento no Google Analytics
         if (typeof window !== 'undefined' && (window as any).gtag) {
-          (window as any).gtag('event', 'generate_lead', {
+          (window as any).gtag('event', 'cadastro_adesivo_sucesso', {
             currency: 'BRL',
             value: 0,
             event_category: 'Cadastro',
@@ -251,7 +251,7 @@ function LandingPage() {
   const handleWhatsAppClick = () => {
     // Dispara o evento no Google Analytics
     if (typeof window !== 'undefined' && (window as any).gtag) {
-      (window as any).gtag('event', 'click_whatsapp', {
+      (window as any).gtag('event', 'clique_whatsapp_adesivo', {
         event_category: 'Contato',
         event_label: 'Botão WhatsApp Final'
       });
