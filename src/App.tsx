@@ -32,14 +32,12 @@ import { IMaskInput } from 'react-imask';
 import * as XLSX from 'xlsx';
 
 import { CIDADES_SP, WHATSAPP_NUMBER, WHATSAPP_MESSAGE } from './constants';
-import { cn, validateCPF, formatInternationalPhone } from './utils';
+import { cn, formatInternationalPhone } from './utils';
 
 // --- Schemas ---
 
 const registrationSchema = z.object({
   name: z.string({ message: "Por favor, preencha o seu nome completo" }).min(3, "Por favor, preencha o seu nome completo"),
-  rg: z.string({ message: "Por favor, preencha o seu RG" }).min(5, "Por favor, preencha o seu RG"),
-  cpf: z.string({ message: "Por favor, preencha o seu CPF" }).refine(validateCPF, "Por favor, preencha um CPF válido"),
   cep: z.string({ message: "Por favor, preencha o seu CEP" }).min(8, "Por favor, preencha o seu CEP"),
   street: z.string({ message: "Por favor, preencha o nome da sua rua" }).min(1, "Por favor, preencha o nome da sua rua"),
   number: z.string({ message: "Por favor, preencha o número do seu endereço" }).min(1, "Por favor, preencha o número do seu endereço"),
@@ -452,18 +450,6 @@ function LandingPage() {
             </div>
 
             <Input label="Nome Completo" required {...register('name')} error={errors.name?.message} placeholder="Ex: João Silva" />
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Input label="RG" required {...register('rg')} error={errors.rg?.message} placeholder="00.000.000-0" />
-              <MaskedInput 
-                label="CPF" 
-                required
-                mask="000.000.000-00" 
-                onAccept={(val: string) => setValue('cpf', val)} 
-                error={errors.cpf?.message} 
-                placeholder="000.000.000-00"
-              />
-            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <MaskedInput 
@@ -597,12 +583,12 @@ function LandingPage() {
               </div>
               
               <div className="pt-6 space-y-6">
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col items-center lg:items-start gap-2">
                   <span className="text-[10px] font-black uppercase tracking-[0.3em] text-dark/30">Acompanhe nosso trabalho</span>
                   <div className="h-px w-12 bg-dark/10" />
                 </div>
                 
-                <div className="flex flex-wrap items-center gap-4">
+                <div className="flex flex-wrap items-center justify-center lg:justify-start gap-4">
                   <motion.a 
                     whileHover={{ y: -4, scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
@@ -672,8 +658,6 @@ function AdminDashboard() {
       {
         "Status": "Ativo",
         "Nome Responsável": "João da Silva",
-        "RG": "12.345.678-9",
-        "CPF": "123.456.789-00",
         "CEP": "12345-678",
         "Endereço (Rua)": "Rua das Flores",
         "Número": "123",
@@ -688,8 +672,6 @@ function AdminDashboard() {
       {
         "Status": "Ativo",
         "Nome Responsável": "Maria Oliveira",
-        "RG": "98.765.432-1",
-        "CPF": "987.654.321-00",
         "CEP": "04567-890",
         "Endereço (Rua)": "Av. Paulista",
         "Número": "1000",
@@ -898,7 +880,6 @@ function AdminDashboard() {
   const filtered = registrations.filter(r => {
     const matchesSearch = 
       r.name.toLowerCase().includes(search.toLowerCase()) ||
-      r.cpf.includes(search) ||
       r.whatsapp.includes(search) ||
       r.city.toLowerCase().includes(search.toLowerCase());
     
@@ -914,8 +895,6 @@ function AdminDashboard() {
       exportData.push({
         "Status": r.is_cancelled ? 'Cancelado' : 'Ativo',
         "Nome Responsável": r.name,
-        "RG": r.rg,
-        "CPF": r.cpf,
         "CEP": r.cep,
         "Endereço (Rua)": r.street,
         "Número": r.number,
@@ -1056,7 +1035,6 @@ function AdminDashboard() {
                     />
                   </th>
                   <th className="px-6 py-4 text-xs font-bold text-dark/50 uppercase tracking-wider">Responsável</th>
-                  <th className="px-6 py-4 text-xs font-bold text-dark/50 uppercase tracking-wider">Documentos</th>
                   <th className="px-6 py-4 text-xs font-bold text-dark/50 uppercase tracking-wider">Contato</th>
                   <th className="px-6 py-4 text-xs font-bold text-dark/50 uppercase tracking-wider">Localização</th>
                   <th className="px-6 py-4 text-xs font-bold text-dark/50 uppercase tracking-wider">Data</th>
@@ -1090,12 +1068,6 @@ function AdminDashboard() {
                           )}
                         </span>
                         <span className="text-xs text-dark/50">{r.email}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-col text-sm text-dark/70">
-                        <span>CPF: {r.cpf}</span>
-                        <span>RG: {r.rg}</span>
                       </div>
                     </td>
                     <td className="px-6 py-4">

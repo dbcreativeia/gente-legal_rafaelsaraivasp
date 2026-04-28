@@ -38,36 +38,32 @@ try {
     $importedOwners = 0;
 
     foreach ($data as $row) {
-        // Validate required fields
-        if (empty($row['CPF'])) {
-            continue; // Skip invalid rows
+        // Obter e validar WhatsApp primário (agora será a chave)
+        $whatsapp = preg_replace('/[^0-9]/', '', $row['WhatsApp'] ?? '');
+        
+        if (empty($whatsapp) || empty($row['Nome Responsável'])) {
+            continue; // Ignora se não houver WhatsApp ou Nome
         }
 
-        $cpf = preg_replace('/[^0-9]/', '', $row['CPF']);
-        if (empty($cpf)) continue;
-
-        // Check if owner already exists
-        $stmt = $pdo->prepare("SELECT id FROM registrations WHERE cpf = ?");
-        $stmt->execute([$cpf]);
+        // Verifica se já existe um cadastro com esse WhatsApp
+        $stmt = $pdo->prepare("SELECT id FROM registrations WHERE whatsapp = ?");
+        $stmt->execute([$whatsapp]);
         $owner = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$owner) {
-            // Insert new owner
-            $stmt = $pdo->prepare("INSERT INTO registrations (name, rg, cpf, cep, street, number, complement, neighborhood, city, state, phone, whatsapp, email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            // Insere novo dono sem RG e CPF
+            $stmt = $pdo->prepare("INSERT INTO registrations (name, cep, street, number, complement, neighborhood, city, phone, whatsapp, email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             
             $stmt->execute([
                 $row['Nome Responsável'] ?? 'Sem Nome',
-                $row['RG'] ?? '',
-                $cpf,
                 preg_replace('/[^0-9]/', '', $row['CEP'] ?? ''),
                 $row['Endereço (Rua)'] ?? '',
                 $row['Número'] ?? '',
                 $row['Complemento'] ?? '',
                 $row['Bairro'] ?? '',
                 $row['Cidade'] ?? '',
-                $row['Estado'] ?? 'SP',
                 preg_replace('/[^0-9]/', '', $row['Telefone'] ?? ''),
-                preg_replace('/[^0-9]/', '', $row['WhatsApp'] ?? ''),
+                $whatsapp,
                 $row['E-mail'] ?? ''
             ]);
             $importedOwners++;

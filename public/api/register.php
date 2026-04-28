@@ -30,13 +30,11 @@ try {
 
     $owner = $data['owner'];
 
-    // Insere o responsável
-    $stmt = $pdo->prepare("INSERT INTO registrations (name, rg, cpf, cep, street, number, complement, neighborhood, city, phone, whatsapp, email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    // Insere o responsável (Sem RG e CPF)
+    $stmt = $pdo->prepare("INSERT INTO registrations (name, cep, street, number, complement, neighborhood, city, phone, whatsapp, email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     
     $stmt->execute([
         $owner['name'], 
-        $owner['rg'], 
-        $owner['cpf'], 
         $owner['cep'], 
         $owner['street'], 
         $owner['number'],
