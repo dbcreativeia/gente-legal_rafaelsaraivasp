@@ -4,7 +4,9 @@ import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { motion, AnimatePresence } from 'motion/react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell, AreaChart, Area, ScatterChart, Scatter, ZAxis } from 'recharts';
+import { MapContainer, TileLayer, CircleMarker, Tooltip as LeafletTooltip } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
 import { 
   PawPrint, 
   User, 
@@ -32,6 +34,7 @@ import { IMaskInput } from 'react-imask';
 import * as XLSX from 'xlsx';
 
 import { CIDADES_SP, WHATSAPP_NUMBER, WHATSAPP_MESSAGE } from './constants';
+import spCitiesData from './sp_cities.json';
 import { cn, formatInternationalPhone } from './utils';
 
 // --- Schemas ---
@@ -648,84 +651,9 @@ function AdminDashboard() {
   const [search, setSearch] = useState('');
   const [filterCity, setFilterCity] = useState('');
   const [filterStatus, setFilterStatus] = useState('active');
-  const [isImporting, setIsImporting] = useState(false);
   const [loading, setLoading] = useState(true);
   
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
-
-  const downloadTemplate = () => {
-    const templateData = [
-      {
-        "Status": "Ativo",
-        "Nome Responsável": "João da Silva",
-        "CEP": "12345-678",
-        "Endereço (Rua)": "Rua das Flores",
-        "Número": "123",
-        "Complemento": "Apto 4",
-        "Bairro": "Centro",
-        "Cidade": "São Paulo",
-        "Estado": "SP",
-        "Telefone": "(11) 98765-4321",
-        "WhatsApp": "(11) 98765-4321",
-        "E-mail": "joao@email.com"
-      },
-      {
-        "Status": "Ativo",
-        "Nome Responsável": "Maria Oliveira",
-        "CEP": "04567-890",
-        "Endereço (Rua)": "Av. Paulista",
-        "Número": "1000",
-        "Complemento": "",
-        "Bairro": "Bela Vista",
-        "Cidade": "São Paulo",
-        "Estado": "SP",
-        "Telefone": "",
-        "WhatsApp": "(11) 97777-6666",
-        "E-mail": "maria@email.com"
-      }
-    ];
-    const ws = XLSX.utils.json_to_sheet(templateData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Modelo");
-    XLSX.writeFile(wb, "modelo_importacao.xlsx");
-  };
-
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsImporting(true);
-    try {
-      const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data);
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet);
-
-      const res = await safeFetch('/api/import.php', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Admin-Password': sessionStorage.getItem('admin_token') || '',
-          'Authorization': sessionStorage.getItem('admin_token') || ''
-        },
-        body: JSON.stringify(jsonData)
-      });
-
-      const result = await res.json();
-      if (result.success) {
-        alert(result.message);
-        fetchRegistrations(); // Reload data
-      } else {
-        alert('Erro: ' + result.message);
-      }
-    } catch (error) {
-      console.error(error);
-      alert('Erro ao processar o arquivo.');
-    } finally {
-      setIsImporting(false);
-      if (e.target) e.target.value = ''; // Reset input
-    }
-  };
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -888,10 +816,173 @@ function AdminDashboard() {
 
     return matchesSearch && matchesCity && matchesStatus;
   });
+  
+  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#FF6666'];
+
+  // METADADOS ANALÍTICOS (Usando base filtrada para análises ou total, user preference. Abaixo uso "filtered" para poder usar os filtros)
+  const validRegistrations = filtered.filter(r => !r.is_cancelled);
+  const totalRegistrations = validRegistrations.length;
+
+  // Helper para fuso horário SP
+  const getSpDateValues = (dateString: string | null | undefined) => {
+    if (!dateString) return { day: 'Desconhecido', hour: '12:00' };
+    try {
+      // Se a data já contiver Z, T ou -03:00 converte nativo, caso não (ex: YYYY-MM-DD HH:mm:ss originado de bd cloud), garantimos que é tratada como UTC adicionando Z
+      const safeStr = dateString.includes('T') ? dateString : dateString.replace(' ', 'T') + 'Z';
+      const dt = new Date(safeStr);
+      if (isNaN(dt.getTime())) return { day: 'Desconhecido', hour: '12:00' };
+      
+      const spDate = new Intl.DateTimeFormat('pt-BR', { 
+        timeZone: 'America/Sao_Paulo',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).format(dt); // DD/MM/YYYY
+      
+      // formatar pra YYYY-MM-DD
+      const [dd, mm, yyyy] = spDate.split('/');
+      const formattedDay = `${yyyy}-${mm}-${dd}`;
+
+      const spHourStr = new Intl.DateTimeFormat('pt-BR', {
+        timeZone: 'America/Sao_Paulo',
+        hour: '2-digit',
+        hour12: false
+      }).format(dt);
+      
+      const formattedHour = `${spHourStr.padStart(2, '0')}:00`;
+
+      return { day: formattedDay, hour: formattedHour, jsDate: dt };
+    } catch {
+      return { day: 'Desconhecido', hour: '12:00' };
+    }
+  };
+
+  // 1. Tamanho e Crescimento
+  const byDayMap = new Map<string, number>();
+  validRegistrations.forEach(r => {
+    const { day } = getSpDateValues(r.created_at);
+    byDayMap.set(day, (byDayMap.get(day) || 0) + 1);
+  });
+  const dailyData = Array.from(byDayMap.entries())
+    .map(([date, count]) => ({ date, count }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  
+  let acc = 0;
+  const growthData = dailyData.map(d => {
+    acc += d.count;
+    return { ...d, acumulado: acc };
+  });
+
+  const lastDays = dailyData.slice(-2);
+  const countToday = lastDays.length > 0 ? dailyData[dailyData.length - 1].count : 0;
+  const yesterdayCount = lastDays.length > 1 ? dailyData[dailyData.length - 2].count : 0;
+  const growthRate = yesterdayCount === 0 ? (countToday > 0 ? 100 : 0) : ((countToday - yesterdayCount) / yesterdayCount) * 100;
+  const avgPerHour = dailyData.length > 0 ? (totalRegistrations / (dailyData.length * 24)).toFixed(1) : 0;
+
+  // Concentração
+  const byHourMap = new Map<string, number>();
+  validRegistrations.forEach(r => {
+    const { hour } = getSpDateValues(r.created_at);
+    if(hour !== '12:00' || true) {
+      byHourMap.set(hour, (byHourMap.get(hour) || 0) + 1);
+    }
+  });
+  const hourlyData = Array.from(byHourMap.entries())
+    .map(([hour, count]) => ({ hour, count }))
+    .sort((a, b) => a.hour.localeCompare(b.hour));
+  const peakHour = hourlyData.length > 0 ? hourlyData.reduce((max, d) => d.count > max.count ? d : max, hourlyData[0]) : { hour: 'N/A', count: 0 };
+
+  // 2. Geográfico
+  const byCityMap = new Map<string, number>();
+  validRegistrations.forEach(r => {
+    const city = r.city ? r.city.toUpperCase() : 'DESCONHECIDA';
+    byCityMap.set(city, (byCityMap.get(city) || 0) + 1);
+  });
+  const topCities = Array.from(byCityMap.entries())
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 10);
+
+  // Mapa SP
+  const mapData = Array.from(byCityMap.entries())
+    .map(([name, count]) => {
+      const cityNode = spCitiesData.find(c => c.name === name);
+      return {
+        name,
+        count,
+        lat: cityNode ? cityNode.lat : null,
+        lon: cityNode ? cityNode.lon : null
+      };
+    })
+    .filter(c => c.lat !== null && c.lon !== null);
+
+  // CEP (Logístico)
+  const byCepMap = new Map<string, number>();
+  validRegistrations.forEach(r => {
+    if (r.cep) {
+      const area = r.cep.replace(/\D/g, '').substring(0, 5); // 5 primeiros dígitos indicam zona
+      byCepMap.set(area, (byCepMap.get(area) || 0) + 1);
+    }
+  });
+  const topCepAreas = Array.from(byCepMap.entries())
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 10);
+
+  // 3. Qualidade da Base / Risco
+  const wpRegex = /^\d{10,14}$/;
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  let validWpCount = 0;
+  let validEmailCount = 0;
+  const wps = new Set();
+  const emails = new Set();
+  
+  validRegistrations.forEach(r => {
+    const wpCl = r.whatsapp ? r.whatsapp.replace(/\D/g, '') : '';
+    if (wpRegex.test(wpCl)) validWpCount++;
+    if (r.email && emailRegex.test(r.email)) validEmailCount++;
+    
+    if (wpCl) wps.add(wpCl);
+    if (r.email) emails.add(r.email.toLowerCase());
+  });
+
+  const duplicatedWp = totalRegistrations - wps.size;
+  const rateWpValid = totalRegistrations > 0 ? (validWpCount / totalRegistrations * 100).toFixed(1) : '0';
+  const rateEmailValid = totalRegistrations > 0 ? (validEmailCount / totalRegistrations * 100).toFixed(1) : '0';
+
+  // 4. Perfil do Público (Gênero estimado)
+  let fem = 0; let masc = 0; let outro = 0;
+  validRegistrations.forEach(r => {
+    if (!r.name) { outro++; return; }
+    const firstName = r.name.split(' ')[0].toLowerCase();
+    if (firstName.endsWith('a') || firstName.endsWith('e') || firstName === 'suelen' || firstName === 'miriam' || firstName === 'raquel') fem++;
+    else if (firstName.endsWith('o') || firstName.endsWith('r') || firstName.endsWith('l') || firstName.endsWith('s')) masc++;
+    else outro++;
+  });
+  const genderData = [
+    { name: 'Feminino (Est.)', value: fem },
+    { name: 'Masculino (Est.)', value: masc },
+    { name: 'Outro/Não Id.', value: outro }
+  ];
 
   const exportToExcel = () => {
     const exportData: any[] = [];
     filtered.forEach(r => {
+      let dataCadastroStr = '-';
+      if (r.created_at) {
+        try {
+          const safeStr = r.created_at.includes('T') ? r.created_at : r.created_at.replace(' ', 'T') + 'Z';
+          const dt = new Date(safeStr);
+          if (!isNaN(dt.getTime())) {
+            dataCadastroStr = new Intl.DateTimeFormat('pt-BR', {
+              timeZone: 'America/Sao_Paulo',
+              dateStyle: 'short',
+              timeStyle: 'medium'
+            }).format(dt);
+          }
+        } catch {}
+      }
+
       exportData.push({
         "Status": r.is_cancelled ? 'Cancelado' : 'Ativo',
         "Nome Responsável": r.name,
@@ -905,7 +996,7 @@ function AdminDashboard() {
         "Telefone": r.phone || '-',
         "WhatsApp": r.whatsapp,
         "E-mail": r.email,
-        "Data Cadastro": new Date(r.created_at).toLocaleString('pt-BR')
+        "Data Cadastro": dataCadastroStr
       });
     });
 
@@ -926,23 +1017,6 @@ function AdminDashboard() {
         </div>
         <div className="flex flex-wrap items-center justify-center gap-2 md:gap-3">
           <button 
-            onClick={downloadTemplate}
-            className="bg-gray-100 hover:bg-gray-200 text-dark px-3 py-2 md:px-4 md:py-2 rounded-xl text-xs md:text-sm font-bold flex items-center gap-2 transition-all"
-            title="Baixar planilha modelo para importação"
-          >
-            <FileText size={16} /> Modelo
-          </button>
-          <label className={`bg-primary hover:bg-primary/90 text-white px-3 py-2 md:px-4 md:py-2 rounded-xl text-xs md:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${isImporting ? 'opacity-50 pointer-events-none' : ''}`}>
-            <Upload size={16} /> {isImporting ? 'Importando...' : 'Importar'}
-            <input 
-              type="file" 
-              accept=".xlsx, .xls, .csv" 
-              className="hidden" 
-              onChange={handleImport}
-              disabled={isImporting}
-            />
-          </label>
-          <button 
             onClick={exportToExcel}
             className="bg-secondary hover:bg-dark text-white px-3 py-2 md:px-4 md:py-2 rounded-xl text-xs md:text-sm font-bold flex items-center gap-2 transition-all"
           >
@@ -961,14 +1035,171 @@ function AdminDashboard() {
         </div>
       </nav>
 
-      <main className="p-4 md:p-6 max-w-[1600px] mx-auto space-y-6">
-        {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-          <div className="bg-white p-4 md:p-6 rounded-3xl shadow-sm border border-dark/5">
-            <p className="text-dark/50 text-sm font-medium mb-1">Total de Cadastros</p>
-            <p className="text-3xl font-black text-dark">{filtered.length}</p>
+      <main className="p-4 md:p-6 max-w-[1600px] mx-auto space-y-8">
+        
+        {/* KPI Row 1: Tamanho e Crescimento */}
+        <section className="space-y-4">
+          <h2 className="text-xl font-display font-bold text-dark border-b pb-2">1. Tração e Crescimento</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5">
+              <p className="text-dark/50 text-sm font-medium">Total de Cadastros</p>
+              <p className="text-3xl font-black text-dark">{totalRegistrations}</p>
+            </div>
+            <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5">
+              <p className="text-dark/50 text-sm font-medium">Cadastros Hoje</p>
+              <div className="flex items-end gap-2">
+                <p className="text-3xl font-black text-dark">{countToday}</p>
+                <span className={`text-sm mb-1 font-bold ${growthRate >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                  {growthRate > 0 ? '+' : ''}{growthRate.toFixed(1)}%
+                </span>
+              </div>
+            </div>
+            <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5">
+              <p className="text-dark/50 text-sm font-medium">Média (Cadastros/Hora)</p>
+              <p className="text-3xl font-black text-dark">{avgPerHour}</p>
+            </div>
+            <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5">
+              <p className="text-dark/50 text-sm font-medium">Pico de Horário (Total)</p>
+              <div className="flex items-end gap-2">
+                <p className="text-3xl font-black text-dark">{peakHour.hour}</p>
+                <span className="text-sm text-dark/50 mb-1">({peakHour.count} regs)</span>
+              </div>
+            </div>
           </div>
-        </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5 h-[300px]">
+              <h3 className="text-sm font-bold text-dark/70 mb-4">Cadastros por Dia (Acumulado)</h3>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={growthData}>
+                  <defs>
+                    <linearGradient id="colorAcc" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#8884d8" stopOpacity={0.8}/>
+                      <stop offset="95%" stopColor="#8884d8" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="date" fontSize={12} tickMargin={10} />
+                  <YAxis fontSize={12} />
+                  <Tooltip />
+                  <Area type="monotone" dataKey="acumulado" stroke="#8884d8" fillOpacity={1} fill="url(#colorAcc)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5 h-[300px]">
+              <h3 className="text-sm font-bold text-dark/70 mb-4">Distribuição por Horário Média</h3>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={hourlyData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="hour" fontSize={12} tickMargin={10} />
+                  <YAxis fontSize={12} />
+                  <Tooltip />
+                  <Bar dataKey="count" fill="#82ca9d" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </section>
+
+        {/* KPI Row 2: Geografia e Logistica */}
+        <section className="space-y-4">
+          <h2 className="text-xl font-display font-bold text-dark border-b pb-2">2. Geográfico & Logístico</h2>
+          
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5 z-0">
+            <h3 className="text-sm font-bold text-dark/70 mb-4">Mapa de Densidade (SP)</h3>
+            <div className="w-full rounded-xl overflow-hidden border border-gray-200 z-0">
+              <MapContainer center={[-23.5505, -46.6333]} zoom={7} style={{ height: '400px', width: '100%', zIndex: 0 }} scrollWheelZoom={false}>
+                <TileLayer
+                  attribution='&copy; OpenStreetMap contributors'
+                  url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+                />
+                {mapData.map((city, idx) => (
+                  <CircleMarker 
+                    key={idx}
+                    center={[city.lat as number, city.lon as number]}
+                    pathOptions={{ color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.6, weight: 1 }}
+                    radius={Math.max(3, Math.min(10, Math.sqrt(city.count) * 1.5))}
+                  >
+                    <LeafletTooltip>
+                      <div className="text-center">
+                        <div className="font-bold">{city.name}</div>
+                        <div>{city.count} {city.count === 1 ? 'cadastro' : 'cadastros'}</div>
+                      </div>
+                    </LeafletTooltip>
+                  </CircleMarker>
+                ))}
+              </MapContainer>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5 h-[300px]">
+              <h3 className="text-sm font-bold text-dark/70 mb-4">Top 10 Cidades</h3>
+              <ResponsiveContainer width="100%" height={230}>
+                <BarChart data={topCities} layout="vertical" margin={{ left: 50 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                  <XAxis type="number" fontSize={12} />
+                  <YAxis dataKey="name" type="category" fontSize={10} width={80} />
+                  <Tooltip />
+                  <Bar dataKey="value" fill="#FFBB28" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+             <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5 h-[300px]">
+              <h3 className="text-sm font-bold text-dark/70 mb-4">Agrupamentos Logísticos (Top Prefixos de CEP)</h3>
+              <ResponsiveContainer width="100%" height={230}>
+                <BarChart data={topCepAreas}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" fontSize={10} tickMargin={10} />
+                  <YAxis fontSize={12} />
+                  <Tooltip />
+                  <Bar dataKey="value" fill="#00C49F" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5 h-[300px]">
+              <h3 className="text-sm font-bold text-dark/70 mb-4">Perfil do Público (Gênero Est.)</h3>
+              <ResponsiveContainer width="100%" height={230}>
+                <PieChart>
+                  <Pie
+                    data={genderData}
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={80}
+                    dataKey="value"
+                    label={({name, percent}) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  >
+                    {genderData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </section>
+
+        {/* KPI Row 3: Qualidade da Base / Risco */}
+        <section className="space-y-4">
+          <h2 className="text-xl font-display font-bold text-dark border-b pb-2">3. Qualidade da Base & Risco</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5">
+              <p className="text-dark/50 text-sm font-medium">Pessoas Únicas (dedup. por celular)</p>
+              <div className="flex items-end gap-2">
+                <p className="text-3xl font-black text-dark">{totalRegistrations - duplicatedWp}</p>
+                <span className="text-sm text-red-500 font-bold mb-1">({duplicatedWp} duplicados)</span>
+              </div>
+            </div>
+            <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5">
+              <p className="text-dark/50 text-sm font-medium">WhatsApp Válido (%)</p>
+              <p className="text-3xl font-black text-dark">{rateWpValid}%</p>
+            </div>
+            <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5">
+              <p className="text-dark/50 text-sm font-medium">E-mail Válido (%)</p>
+              <p className="text-3xl font-black text-dark">{rateEmailValid}%</p>
+            </div>
+          </div>
+        </section>
 
         {/* Filters */}
         <div className="bg-white p-4 md:p-6 rounded-3xl shadow-sm border border-dark/5 flex flex-col md:flex-row gap-4">
@@ -1086,7 +1317,16 @@ function AdminDashboard() {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-sm text-dark/50">
-                      {new Date(r.created_at).toLocaleDateString('pt-BR')}
+                      {(() => {
+                        try {
+                          const safeStr = r.created_at.includes('T') ? r.created_at : r.created_at.replace(' ', 'T') + 'Z';
+                          const dt = new Date(safeStr);
+                          if (!isNaN(dt.getTime())) {
+                            return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' }).format(dt);
+                          }
+                        } catch {}
+                        return r.created_at;
+                      })()}
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
