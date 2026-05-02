@@ -28,7 +28,8 @@ import {
   Facebook,
   Lock,
   Upload,
-  FileText
+  FileText,
+  HelpCircle
 } from 'lucide-react';
 import { IMaskInput } from 'react-imask';
 import * as XLSX from 'xlsx';
@@ -651,6 +652,18 @@ function AdminDashboard() {
   const [search, setSearch] = useState('');
   const [filterCity, setFilterCity] = useState('');
   const [filterStatus, setFilterStatus] = useState('active');
+  const [dateStart, setDateStart] = useState('');
+  const [dateEnd, setDateEnd] = useState('');
+  const [isComparing, setIsComparing] = useState(false);
+  const [compareStart, setCompareStart] = useState('');
+  const [compareEnd, setCompareEnd] = useState('');
+  
+  const [appliedDateStart, setAppliedDateStart] = useState('');
+  const [appliedDateEnd, setAppliedDateEnd] = useState('');
+  const [appliedIsComparing, setAppliedIsComparing] = useState(false);
+  const [appliedCompareStart, setAppliedCompareStart] = useState('');
+  const [appliedCompareEnd, setAppliedCompareEnd] = useState('');
+  
   const [loading, setLoading] = useState(true);
   
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -805,44 +818,44 @@ function AdminDashboard() {
     );
   }
 
-  const filtered = registrations.filter(r => {
-    const matchesSearch = 
-      r.name.toLowerCase().includes(search.toLowerCase()) ||
-      r.whatsapp.includes(search) ||
-      r.city.toLowerCase().includes(search.toLowerCase());
-    
-    const matchesCity = !filterCity || r.city === filterCity;
-    const matchesStatus = filterStatus === 'all' ? true : filterStatus === 'active' ? !r.is_cancelled : r.is_cancelled;
-
-    return matchesSearch && matchesCity && matchesStatus;
-  });
-  
-  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#FF6666'];
-
-  // METADADOS ANALÍTICOS (Usando base filtrada para análises ou total, user preference. Abaixo uso "filtered" para poder usar os filtros)
-  const validRegistrations = filtered.filter(r => !r.is_cancelled);
-  const totalRegistrations = validRegistrations.length;
-
   // Helper para fuso horário SP
+  const tryParseDateStr = (dateString: string | null | undefined) => {
+    if (!dateString) return null;
+    const brFormatMatch = dateString.match(/^(\d{2})\/(\d{2})\/(\d{2,4})/);
+    if (brFormatMatch) {
+      const d = Number(brFormatMatch[1]);
+      const m = Number(brFormatMatch[2]);
+      let y = Number(brFormatMatch[3]);
+      if (y < 100) y += 2000;
+      
+      let h = 0, min = 0, s = 0;
+      const timeMatch = dateString.match(/(\d{2}):(\d{2})(?::(\d{2}))?/);
+      if (timeMatch) {
+        h = Number(timeMatch[1]);
+        min = Number(timeMatch[2]);
+        if (timeMatch[3]) s = Number(timeMatch[3]);
+      }
+      return new Date(y, m - 1, d, h, min, s);
+    }
+
+    const safeStr = dateString.includes('T') ? dateString : dateString.replace(' ', 'T') + 'Z';
+    const dt = new Date(safeStr);
+    return isNaN(dt.getTime()) ? null : dt;
+  };
+
   const getSpDateValues = (dateString: string | null | undefined) => {
     if (!dateString) return { day: 'Desconhecido', hour: '12:00' };
     try {
-      // Se a data já contiver Z, T ou -03:00 converte nativo, caso não (ex: YYYY-MM-DD HH:mm:ss originado de bd cloud), garantimos que é tratada como UTC adicionando Z
-      const safeStr = dateString.includes('T') ? dateString : dateString.replace(' ', 'T') + 'Z';
-      const dt = new Date(safeStr);
-      if (isNaN(dt.getTime())) return { day: 'Desconhecido', hour: '12:00' };
+      const dt = tryParseDateStr(dateString);
+      if (!dt) return { day: 'Desconhecido', hour: '12:00' };
       
-      const spDate = new Intl.DateTimeFormat('pt-BR', { 
+      const formattedDay = new Intl.DateTimeFormat('en-CA', { 
         timeZone: 'America/Sao_Paulo',
         year: 'numeric',
         month: '2-digit',
         day: '2-digit'
-      }).format(dt); // DD/MM/YYYY
+      }).format(dt);
       
-      // formatar pra YYYY-MM-DD
-      const [dd, mm, yyyy] = spDate.split('/');
-      const formattedDay = `${yyyy}-${mm}-${dd}`;
-
       const spHourStr = new Intl.DateTimeFormat('pt-BR', {
         timeZone: 'America/Sao_Paulo',
         hour: '2-digit',
@@ -857,6 +870,88 @@ function AdminDashboard() {
     }
   };
 
+  const parseFilterDate = (dateStr: string, isEnd: boolean) => {
+    if (!dateStr) return null;
+    const [y, m, d] = dateStr.split('-');
+    const dt = new Date(Number(y), Number(m) - 1, Number(d));
+    if (isEnd) {
+      dt.setHours(23, 59, 59, 999);
+    } else {
+      dt.setHours(0, 0, 0, 0);
+    }
+    return dt.getTime();
+  };
+
+  const getSpDate = (dateString: string) => {
+    const dt = tryParseDateStr(dateString);
+    return dt ? dt.getTime() : null;
+  };
+
+  const filtered = registrations.filter(r => {
+    const matchesSearch = 
+      r.name.toLowerCase().includes(search.toLowerCase()) ||
+      r.whatsapp.includes(search) ||
+      r.city.toLowerCase().includes(search.toLowerCase());
+    
+    const matchesCity = !filterCity || r.city === filterCity;
+    const matchesStatus = filterStatus === 'all' ? true : filterStatus === 'active' ? !r.is_cancelled : r.is_cancelled;
+
+    let matchesDate = true;
+    if (appliedDateStart || appliedDateEnd) {
+      const startMs = parseFilterDate(appliedDateStart, false);
+      const endMs = parseFilterDate(appliedDateEnd, true);
+      const itemMs = getSpDate(r.created_at);
+      
+      if (itemMs !== null) {
+        if (startMs && itemMs < startMs) matchesDate = false;
+        if (endMs && itemMs > endMs) matchesDate = false;
+      } else {
+        matchesDate = false;
+      }
+    }
+
+    return matchesSearch && matchesCity && matchesStatus && matchesDate;
+  });
+
+  const filteredCompare = registrations.filter(r => {
+    if (!appliedIsComparing) return false;
+    
+    const matchesSearch = 
+      r.name.toLowerCase().includes(search.toLowerCase()) ||
+      r.whatsapp.includes(search) ||
+      r.city.toLowerCase().includes(search.toLowerCase());
+    
+    const matchesCity = !filterCity || r.city === filterCity;
+    const matchesStatus = filterStatus === 'all' ? true : filterStatus === 'active' ? !r.is_cancelled : r.is_cancelled;
+
+    let matchesDate = true;
+    if (appliedCompareStart || appliedCompareEnd) {
+      const startMs = parseFilterDate(appliedCompareStart, false);
+      const endMs = parseFilterDate(appliedCompareEnd, true);
+      const itemMs = getSpDate(r.created_at);
+      
+      if (itemMs !== null) {
+        if (startMs && itemMs < startMs) matchesDate = false;
+        if (endMs && itemMs > endMs) matchesDate = false;
+      } else {
+        matchesDate = false;
+      }
+    } else {
+      matchesDate = false; 
+    }
+
+    return matchesSearch && matchesCity && matchesStatus && matchesDate;
+  });
+  
+  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#FF6666'];
+
+  // METADADOS ANALÍTICOS (Usando base filtrada para análises ou total, user preference. Abaixo uso "filtered" para poder usar os filtros)
+  const validRegistrations = filtered.filter(r => !r.is_cancelled);
+  const totalRegistrations = validRegistrations.length;
+
+  const validRegistrationsCompare = filteredCompare.filter(r => !r.is_cancelled);
+  const totalRegistrationsCompare = validRegistrationsCompare.length;
+
   // 1. Tamanho e Crescimento
   const byDayMap = new Map<string, number>();
   validRegistrations.forEach(r => {
@@ -866,50 +961,86 @@ function AdminDashboard() {
   const dailyData = Array.from(byDayMap.entries())
     .map(([date, count]) => ({ date, count }))
     .sort((a, b) => a.date.localeCompare(b.date));
-  
-  let acc = 0;
-  const growthData = dailyData.map(d => {
-    acc += d.count;
-    return { ...d, acumulado: acc };
-  });
 
-  const lastDays = dailyData.slice(-2);
-  const countToday = lastDays.length > 0 ? dailyData[dailyData.length - 1].count : 0;
-  const yesterdayCount = lastDays.length > 1 ? dailyData[dailyData.length - 2].count : 0;
+  const byDayMapCompare = new Map<string, number>();
+  validRegistrationsCompare.forEach(r => {
+    const { day } = getSpDateValues(r.created_at);
+    byDayMapCompare.set(day, (byDayMapCompare.get(day) || 0) + 1);
+  });
+  const dailyDataCompare = Array.from(byDayMapCompare.entries())
+    .map(([date, count]) => ({ date, countCompare: count }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  
+  const maxDays = Math.max(dailyData.length, dailyDataCompare.length);
+  let acc = 0;
+  let accCompare = 0;
+  const growthData = [];
+  for (let i = 0; i < maxDays; i++) {
+    const d1 = dailyData[i];
+    const d2 = dailyDataCompare[i];
+    if (d1) acc += d1.count;
+    if (d2) accCompare += d2.countCompare;
+    growthData.push({
+      dateOriginal: d1 ? d1.date : (d2 ? d2.date : ''),
+      dateDisplay: `Dia ${i + 1}`,
+      count: d1 ? d1.count : 0,
+      countCompare: d2 ? d2.countCompare : 0,
+      acumulado: acc,
+      acumuladoCompare: accCompare
+    });
+  }
+
+  const realTodayStr = getSpDateValues(new Date().toISOString()).day;
+  const realYesterdayDate = new Date();
+  realYesterdayDate.setDate(realYesterdayDate.getDate() - 1);
+  const realYesterdayStr = getSpDateValues(realYesterdayDate.toISOString()).day;
+
+  const countToday = byDayMap.get(realTodayStr) || 0;
+  const yesterdayCount = byDayMap.get(realYesterdayStr) || 0;
   const growthRate = yesterdayCount === 0 ? (countToday > 0 ? 100 : 0) : ((countToday - yesterdayCount) / yesterdayCount) * 100;
   const avgPerHour = dailyData.length > 0 ? (totalRegistrations / (dailyData.length * 24)).toFixed(1) : 0;
 
   // Concentração
-  const byHourMap = new Map<string, number>();
+  const byHourMap = new Map<string, { hour: string, count: number, countCompare: number }>();
+  for (let i = 0; i < 24; i++) {
+    const h = `${i.toString().padStart(2, '0')}:00`;
+    byHourMap.set(h, { hour: h, count: 0, countCompare: 0 });
+  }
   validRegistrations.forEach(r => {
     const { hour } = getSpDateValues(r.created_at);
-    if(hour !== '12:00' || true) {
-      byHourMap.set(hour, (byHourMap.get(hour) || 0) + 1);
-    }
+    if(byHourMap.has(hour)) byHourMap.get(hour)!.count++;
   });
-  const hourlyData = Array.from(byHourMap.entries())
-    .map(([hour, count]) => ({ hour, count }))
+  validRegistrationsCompare.forEach(r => {
+    const { hour } = getSpDateValues(r.created_at);
+    if(byHourMap.has(hour)) byHourMap.get(hour)!.countCompare++;
+  });
+  const hourlyData = Array.from(byHourMap.values())
     .sort((a, b) => a.hour.localeCompare(b.hour));
   const peakHour = hourlyData.length > 0 ? hourlyData.reduce((max, d) => d.count > max.count ? d : max, hourlyData[0]) : { hour: 'N/A', count: 0 };
 
   // 2. Geográfico
-  const byCityMap = new Map<string, number>();
+  const byCityMap = new Map<string, {name: string, value: number, compare: number}>();
   validRegistrations.forEach(r => {
     const city = r.city ? r.city.toUpperCase() : 'DESCONHECIDA';
-    byCityMap.set(city, (byCityMap.get(city) || 0) + 1);
+    if (!byCityMap.has(city)) byCityMap.set(city, { name: city, value: 0, compare: 0 });
+    byCityMap.get(city)!.value++;
   });
-  const topCities = Array.from(byCityMap.entries())
-    .map(([name, value]) => ({ name, value }))
+  validRegistrationsCompare.forEach(r => {
+    const city = r.city ? r.city.toUpperCase() : 'DESCONHECIDA';
+    if (!byCityMap.has(city)) byCityMap.set(city, { name: city, value: 0, compare: 0 });
+    byCityMap.get(city)!.compare++;
+  });
+  const topCities = Array.from(byCityMap.values())
     .sort((a, b) => b.value - a.value)
     .slice(0, 10);
 
   // Mapa SP
-  const mapData = Array.from(byCityMap.entries())
-    .map(([name, count]) => {
-      const cityNode = spCitiesData.find(c => c.name === name);
+  const mapData = Array.from(byCityMap.values())
+    .map((cityData) => {
+      const cityNode = spCitiesData.find(c => c.name === cityData.name);
       return {
-        name,
-        count,
+        name: cityData.name,
+        count: cityData.value,
         lat: cityNode ? cityNode.lat : null,
         lon: cityNode ? cityNode.lon : null
       };
@@ -959,11 +1090,89 @@ function AdminDashboard() {
     else if (firstName.endsWith('o') || firstName.endsWith('r') || firstName.endsWith('l') || firstName.endsWith('s')) masc++;
     else outro++;
   });
+  
+  let femC = 0; let mascC = 0; let outroC = 0;
+  validRegistrationsCompare.forEach(r => {
+    if (!r.name) { outroC++; return; }
+    const firstName = r.name.split(' ')[0].toLowerCase();
+    if (firstName.endsWith('a') || firstName.endsWith('e') || firstName === 'suelen' || firstName === 'miriam' || firstName === 'raquel') femC++;
+    else if (firstName.endsWith('o') || firstName.endsWith('r') || firstName.endsWith('l') || firstName.endsWith('s')) mascC++;
+    else outroC++;
+  });
+
   const genderData = [
-    { name: 'Feminino (Est.)', value: fem },
-    { name: 'Masculino (Est.)', value: masc },
-    { name: 'Outro/Não Id.', value: outro }
+    { name: 'Feminino (Est.)', value: fem, compare: femC },
+    { name: 'Masculino (Est.)', value: masc, compare: mascC },
+    { name: 'Outro/Não Id.', value: outro, compare: outroC }
   ];
+
+  // Compare Stats
+  let validWpCountCompare = 0;
+  let validEmailCountCompare = 0;
+  const wpsCompare = new Set();
+  const emailsCompare = new Set();
+  validRegistrationsCompare.forEach(r => {
+    const wpCl = r.whatsapp ? r.whatsapp.replace(/\D/g, '') : '';
+    if (wpRegex.test(wpCl)) validWpCountCompare++;
+    if (r.email && emailRegex.test(r.email)) validEmailCountCompare++;
+    if (wpCl) wpsCompare.add(wpCl);
+    if (r.email) emailsCompare.add(r.email.toLowerCase());
+  });
+  const duplicatedWpCompare = totalRegistrationsCompare - wpsCompare.size;
+  const rateWpValidCompare = totalRegistrationsCompare > 0 ? (validWpCountCompare / totalRegistrationsCompare * 100).toFixed(1) : '0';
+  const rateEmailValidCompare = totalRegistrationsCompare > 0 ? (validEmailCountCompare / totalRegistrationsCompare * 100).toFixed(1) : '0';
+  
+  const getCompareBadge = (current: number, compare: number, isPercentage: boolean = false, reverseColors: boolean = false) => {
+    if (!appliedIsComparing) return null;
+    const diff = current - compare;
+    
+    let percentNum = 0;
+    if (compare > 0) {
+      percentNum = (diff / compare) * 100;
+    } else if (current > 0) {
+      percentNum = 100;
+    }
+
+    const isPositive = diff > 0;
+    const isNegative = diff < 0;
+    const isNeutral = diff === 0;
+
+    let color = 'text-gray-500';
+    let bgColor = 'bg-gray-100';
+    if (!isNeutral) {
+      if (reverseColors) {
+        color = isPositive ? 'text-red-600' : 'text-green-600';
+        bgColor = isPositive ? 'bg-red-50' : 'bg-green-50';
+      } else {
+        color = isPositive ? 'text-green-600' : 'text-red-600';
+        bgColor = isPositive ? 'bg-green-50' : 'bg-red-50';
+      }
+    }
+
+    const Arrow = isPositive ? '↑' : isNegative ? '↓' : '';
+    const sign = isPositive ? '+' : isNegative ? '-' : '';
+    const formattedCompare = isPercentage ? `${compare.toFixed(1)}%` : compare.toString();
+    const formattedDiff = isPercentage ? Math.abs(diff).toFixed(1) : Math.abs(diff).toString();
+
+    return (
+      <div className={`text-xs mt-2 flex flex-col gap-1`}>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className={`flex items-center gap-0.5 font-bold px-1.5 py-0.5 rounded-md ${bgColor} ${color}`}>
+            {Arrow && <span>{Arrow}</span>}
+            {Math.abs(percentNum).toFixed(1)}%
+          </div>
+          <span className="text-dark/50 font-medium">
+            vs <span className="font-bold text-dark/70">{formattedCompare}</span> no período anterior
+          </span>
+        </div>
+        {!isNeutral && (
+          <div className={`text-[11px] font-medium ${color}`}>
+            Diferença: {sign}{formattedDiff}{isPercentage ? '%' : ''}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const exportToExcel = () => {
     const exportData: any[] = [];
@@ -971,9 +1180,8 @@ function AdminDashboard() {
       let dataCadastroStr = '-';
       if (r.created_at) {
         try {
-          const safeStr = r.created_at.includes('T') ? r.created_at : r.created_at.replace(' ', 'T') + 'Z';
-          const dt = new Date(safeStr);
-          if (!isNaN(dt.getTime())) {
+          const dt = tryParseDateStr(r.created_at);
+          if (dt) {
             dataCadastroStr = new Intl.DateTimeFormat('pt-BR', {
               timeZone: 'America/Sao_Paulo',
               dateStyle: 'short',
@@ -1042,11 +1250,28 @@ function AdminDashboard() {
           <h2 className="text-xl font-display font-bold text-dark border-b pb-2">1. Tração e Crescimento</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5">
-              <p className="text-dark/50 text-sm font-medium">Total de Cadastros</p>
+              <div className="flex items-center gap-2 mb-1">
+                <p className="text-dark/50 text-sm font-medium">Total de Cadastros</p>
+                <div className="relative group flex items-center">
+                  <HelpCircle size={14} className="text-dark/30 cursor-help" />
+                  <div className="absolute hidden group-hover:block bottom-full mb-2 left-1/2 -translate-x-1/2 w-48 p-2 bg-dark text-white text-xs rounded-lg shadow-lg z-50 text-center">
+                    Número total de registros considerando os filtros aplicados.
+                  </div>
+                </div>
+              </div>
               <p className="text-3xl font-black text-dark">{totalRegistrations}</p>
+              {getCompareBadge(totalRegistrations, totalRegistrationsCompare)}
             </div>
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5">
-              <p className="text-dark/50 text-sm font-medium">Cadastros Hoje</p>
+              <div className="flex items-center gap-2 mb-1">
+                <p className="text-dark/50 text-sm font-medium">Cadastros Hoje</p>
+                <div className="relative group flex items-center">
+                  <HelpCircle size={14} className="text-dark/30 cursor-help" />
+                  <div className="absolute hidden group-hover:block bottom-full mb-2 left-1/2 -translate-x-1/2 w-48 p-2 bg-dark text-white text-xs rounded-lg shadow-lg z-50 text-center">
+                    Total de novos registros gerados no dia atual (fuso SP). A porcentagem indica a evolução em relação ao dia de ontem.
+                  </div>
+                </div>
+              </div>
               <div className="flex items-end gap-2">
                 <p className="text-3xl font-black text-dark">{countToday}</p>
                 <span className={`text-sm mb-1 font-bold ${growthRate >= 0 ? 'text-green-500' : 'text-red-500'}`}>
@@ -1055,47 +1280,121 @@ function AdminDashboard() {
               </div>
             </div>
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5">
-              <p className="text-dark/50 text-sm font-medium">Média (Cadastros/Hora)</p>
+              <div className="flex items-center gap-2 mb-1">
+                <p className="text-dark/50 text-sm font-medium">Média (Cadastros/Hora)</p>
+                <div className="relative group flex items-center">
+                  <HelpCircle size={14} className="text-dark/30 cursor-help" />
+                  <div className="absolute hidden group-hover:block bottom-full mb-2 left-1/2 -translate-x-1/2 w-48 p-2 bg-dark text-white text-xs rounded-lg shadow-lg z-50 text-center">
+                    Volume horário médio de novos cadastros dentro do período visualizado.
+                  </div>
+                </div>
+              </div>
               <p className="text-3xl font-black text-dark">{avgPerHour}</p>
             </div>
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5">
-              <p className="text-dark/50 text-sm font-medium">Pico de Horário (Total)</p>
+              <div className="flex items-center gap-2 mb-1">
+                <p className="text-dark/50 text-sm font-medium">Pico de Horário (Total)</p>
+                <div className="relative group flex items-center">
+                  <HelpCircle size={14} className="text-dark/30 cursor-help" />
+                  <div className="absolute hidden group-hover:block bottom-full mb-2 right-0 md:left-1/2 md:-translate-x-1/2 w-48 p-2 bg-dark text-white text-xs rounded-lg shadow-lg z-50 md:text-center text-right">
+                    O horário fuso SP com maior volume histórico de cadastros.
+                  </div>
+                </div>
+              </div>
               <div className="flex items-end gap-2">
                 <p className="text-3xl font-black text-dark">{peakHour.hour}</p>
                 <span className="text-sm text-dark/50 mb-1">({peakHour.count} regs)</span>
               </div>
             </div>
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5 h-[300px]">
-              <h3 className="text-sm font-bold text-dark/70 mb-4">Cadastros por Dia (Acumulado)</h3>
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={growthData}>
-                  <defs>
-                    <linearGradient id="colorAcc" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#8884d8" stopOpacity={0.8}/>
-                      <stop offset="95%" stopColor="#8884d8" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="date" fontSize={12} tickMargin={10} />
-                  <YAxis fontSize={12} />
-                  <Tooltip />
-                  <Area type="monotone" dataKey="acumulado" stroke="#8884d8" fillOpacity={1} fill="url(#colorAcc)" />
-                </AreaChart>
-              </ResponsiveContainer>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5 h-[300px] flex flex-col">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-bold text-dark/70">Cadastros por Dia (Acumulado)</h3>
+                <div className="relative group flex items-center">
+                  <HelpCircle size={16} className="text-dark/40 cursor-help" />
+                  <div className="absolute hidden group-hover:block bottom-full mb-2 right-0 w-64 p-2 bg-dark text-white text-xs rounded-lg shadow-lg z-50">
+                    Mostra a soma de todos os cadastros registrados no tempo. A linha representa o volume total acumulado.
+                  </div>
+                </div>
+              </div>
+              <div className="flex-1 min-h-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={growthData}>
+                    <defs>
+                      <linearGradient id="colorAcc" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#8884d8" stopOpacity={0.8}/>
+                        <stop offset="95%" stopColor="#8884d8" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="colorAccComp" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#82ca9d" stopOpacity={0.8}/>
+                        <stop offset="95%" stopColor="#82ca9d" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey={appliedIsComparing ? "dateDisplay" : "dateOriginal"} fontSize={12} tickMargin={10} />
+                    <YAxis fontSize={12} />
+                    <Tooltip />
+                    {appliedIsComparing && <Legend verticalAlign="top" height={36} />}
+                    <Area type="monotone" dataKey="acumulado" name="Atual" stroke="#8884d8" fillOpacity={1} fill="url(#colorAcc)" />
+                    {appliedIsComparing && (
+                      <Area type="monotone" dataKey="acumuladoCompare" name="Comparativo" stroke="#82ca9d" fillOpacity={1} fill="url(#colorAccComp)" />
+                    )}
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
             </div>
-            <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5 h-[300px]">
-              <h3 className="text-sm font-bold text-dark/70 mb-4">Distribuição por Horário Média</h3>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={hourlyData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="hour" fontSize={12} tickMargin={10} />
-                  <YAxis fontSize={12} />
-                  <Tooltip />
-                  <Bar dataKey="count" fill="#82ca9d" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+            <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5 h-[300px] flex flex-col">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-bold text-dark/70">Cadastros Novos Diários</h3>
+                <div className="relative group flex items-center">
+                  <HelpCircle size={16} className="text-dark/40 cursor-help" />
+                  <div className="absolute hidden group-hover:block bottom-full mb-2 right-0 w-64 p-2 bg-dark text-white text-xs rounded-lg shadow-lg z-50">
+                    Mostra unicamente a quantidade de novas pessoas se cadastrando a cada dia. Ideal para identificar dias de pico.
+                  </div>
+                </div>
+              </div>
+              <div className="flex-1 min-h-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={growthData}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey={appliedIsComparing ? "dateDisplay" : "dateOriginal"} fontSize={12} tickMargin={10} />
+                    <YAxis fontSize={12} />
+                    <Tooltip />
+                    {appliedIsComparing && <Legend verticalAlign="top" height={36} />}
+                    <Bar dataKey="count" name="Atual" fill="#0088FE" radius={[4, 4, 0, 0]} />
+                    {appliedIsComparing && (
+                      <Bar dataKey="countCompare" name="Comparativo" fill="#82ca9d" radius={[4, 4, 0, 0]} />
+                    )}
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+            <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5 h-[300px] flex flex-col">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-bold text-dark/70">Distribuição por Horário</h3>
+                <div className="relative group flex items-center">
+                  <HelpCircle size={16} className="text-dark/40 cursor-help" />
+                  <div className="absolute hidden group-hover:block bottom-full mb-2 right-0 w-64 p-2 bg-dark text-white text-xs rounded-lg shadow-lg z-50">
+                    Apresenta os horários com maior volume (fuso SP), permitindo encontrar momentos em que o público está ativo.
+                  </div>
+                </div>
+              </div>
+              <div className="flex-1 min-h-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={hourlyData}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="hour" fontSize={12} tickMargin={10} />
+                    <YAxis fontSize={12} />
+                    <Tooltip />
+                    {appliedIsComparing && <Legend verticalAlign="top" height={36} />}
+                    <Bar dataKey="count" name="Atual" fill="#8884d8" radius={[4, 4, 0, 0]} />
+                    {appliedIsComparing && (
+                      <Bar dataKey="countCompare" name="Comparativo" fill="#FFBB28" radius={[4, 4, 0, 0]} />
+                    )}
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           </div>
         </section>
@@ -1105,7 +1404,15 @@ function AdminDashboard() {
           <h2 className="text-xl font-display font-bold text-dark border-b pb-2">2. Geográfico & Logístico</h2>
           
           <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5 z-0">
-            <h3 className="text-sm font-bold text-dark/70 mb-4">Mapa de Densidade (SP)</h3>
+            <div className="flex items-center gap-2 mb-4">
+              <h3 className="text-sm font-bold text-dark/70">Mapa de Densidade (SP)</h3>
+              <div className="relative group flex items-center">
+                <HelpCircle size={16} className="text-dark/40 cursor-help" />
+                <div className="absolute hidden group-hover:block bottom-full mb-2 w-64 p-2 bg-dark text-white text-xs rounded-lg shadow-lg z-50">
+                  Visualização geográfica da localização dos usuários por cidade. O tamanho do círculo reflete a proporção de cadastros na região.
+                </div>
+              </div>
+            </div>
             <div className="w-full rounded-xl overflow-hidden border border-gray-200 z-0">
               <MapContainer center={[-23.5505, -46.6333]} zoom={7} style={{ height: '400px', width: '100%', zIndex: 0 }} scrollWheelZoom={false}>
                 <TileLayer
@@ -1131,49 +1438,69 @@ function AdminDashboard() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5 h-[300px]">
-              <h3 className="text-sm font-bold text-dark/70 mb-4">Top 10 Cidades</h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-bold text-dark/70">Top 10 Cidades</h3>
+                <div className="relative group flex items-center">
+                  <HelpCircle size={16} className="text-dark/40 cursor-help" />
+                  <div className="absolute hidden group-hover:block bottom-full mb-2 right-0 w-64 p-2 bg-dark text-white text-xs rounded-lg shadow-lg z-50">
+                    Ranking das 10 cidades com o maior número de cadastros contabilizados no período filtrado.
+                  </div>
+                </div>
+              </div>
               <ResponsiveContainer width="100%" height={230}>
-                <BarChart data={topCities} layout="vertical" margin={{ left: 50 }}>
+                <BarChart data={topCities} layout="vertical" margin={{ left: 0, right: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                   <XAxis type="number" fontSize={12} />
-                  <YAxis dataKey="name" type="category" fontSize={10} width={80} />
+                  <YAxis dataKey="name" type="category" fontSize={10} width={110} />
                   <Tooltip />
-                  <Bar dataKey="value" fill="#FFBB28" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-             <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5 h-[300px]">
-              <h3 className="text-sm font-bold text-dark/70 mb-4">Agrupamentos Logísticos (Top Prefixos de CEP)</h3>
-              <ResponsiveContainer width="100%" height={230}>
-                <BarChart data={topCepAreas}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" fontSize={10} tickMargin={10} />
-                  <YAxis fontSize={12} />
-                  <Tooltip />
-                  <Bar dataKey="value" fill="#00C49F" radius={[4, 4, 0, 0]} />
+                  {appliedIsComparing && <Legend verticalAlign="top" height={36} />}
+                  <Bar dataKey="value" name="Atual" fill="#FFBB28" radius={[0, 4, 4, 0]} />
+                  {appliedIsComparing && (
+                    <Bar dataKey="compare" name="Comparativo" fill="#0088FE" radius={[0, 4, 4, 0]} />
+                  )}
                 </BarChart>
               </ResponsiveContainer>
             </div>
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5 h-[300px]">
-              <h3 className="text-sm font-bold text-dark/70 mb-4">Perfil do Público (Gênero Est.)</h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-bold text-dark/70">Perfil do Público (Gênero Est.)</h3>
+                <div className="relative group flex items-center">
+                  <HelpCircle size={16} className="text-dark/40 cursor-help" />
+                  <div className="absolute hidden group-hover:block bottom-full mb-2 right-0 w-64 p-2 bg-dark text-white text-xs rounded-lg shadow-lg z-50">
+                    Estimativa baseada nos primeiros nomes. Ajuda no entendimento de linguagem a ser utilizada ou tipo de brindes a enviar.
+                  </div>
+                </div>
+              </div>
               <ResponsiveContainer width="100%" height={230}>
-                <PieChart>
-                  <Pie
-                    data={genderData}
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={80}
-                    dataKey="value"
-                    label={({name, percent}) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  >
-                    {genderData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
+                {appliedIsComparing ? (
+                  <BarChart data={genderData} layout="vertical" margin={{ left: 0, right: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                    <XAxis type="number" fontSize={12} />
+                    <YAxis dataKey="name" type="category" fontSize={10} width={110} />
+                    <Tooltip />
+                    {appliedIsComparing && <Legend verticalAlign="top" height={36} />}
+                    <Bar dataKey="value" name="Atual" fill="#0088FE" radius={[0, 4, 4, 0]} />
+                    <Bar dataKey="compare" name="Comparativo" fill="#00C49F" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                ) : (
+                  <PieChart>
+                    <Pie
+                      data={genderData}
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={80}
+                      dataKey="value"
+                      label={({name, percent}) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    >
+                      {genderData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                )}
               </ResponsiveContainer>
             </div>
           </div>
@@ -1184,52 +1511,143 @@ function AdminDashboard() {
           <h2 className="text-xl font-display font-bold text-dark border-b pb-2">3. Qualidade da Base & Risco</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5">
-              <p className="text-dark/50 text-sm font-medium">Pessoas Únicas (dedup. por celular)</p>
+              <div className="flex items-center gap-2 mb-1">
+                <p className="text-dark/50 text-sm font-medium">Pessoas Únicas (dedup. por celular)</p>
+                <div className="relative group flex items-center">
+                  <HelpCircle size={14} className="text-dark/30 cursor-help" />
+                  <div className="absolute hidden group-hover:block bottom-full mb-2 left-1/2 -translate-x-1/2 w-48 p-2 bg-dark text-white text-xs rounded-lg shadow-lg z-50 text-center">
+                    Total de indivíduos desconsiderando números de telefone repetidos.
+                  </div>
+                </div>
+              </div>
               <div className="flex items-end gap-2">
                 <p className="text-3xl font-black text-dark">{totalRegistrations - duplicatedWp}</p>
                 <span className="text-sm text-red-500 font-bold mb-1">({duplicatedWp} duplicados)</span>
               </div>
+              {getCompareBadge(totalRegistrations - duplicatedWp, totalRegistrationsCompare - duplicatedWpCompare)}
             </div>
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5">
-              <p className="text-dark/50 text-sm font-medium">WhatsApp Válido (%)</p>
+              <div className="flex items-center gap-2 mb-1">
+                <p className="text-dark/50 text-sm font-medium">WhatsApp Válido (%)</p>
+                <div className="relative group flex items-center">
+                  <HelpCircle size={14} className="text-dark/30 cursor-help" />
+                  <div className="absolute hidden group-hover:block bottom-full mb-2 left-1/2 -translate-x-1/2 w-48 p-2 bg-dark text-white text-xs rounded-lg shadow-lg z-50 text-center">
+                    Volume de números de WhatsApp sem erros de formatação aparente.
+                  </div>
+                </div>
+              </div>
               <p className="text-3xl font-black text-dark">{rateWpValid}%</p>
+              {getCompareBadge(parseFloat(rateWpValid), parseFloat(rateWpValidCompare), true)}
             </div>
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-dark/5">
-              <p className="text-dark/50 text-sm font-medium">E-mail Válido (%)</p>
+              <div className="flex items-center gap-2 mb-1">
+                <p className="text-dark/50 text-sm font-medium">E-mail Válido (%)</p>
+                <div className="relative group flex items-center">
+                  <HelpCircle size={14} className="text-dark/30 cursor-help" />
+                  <div className="absolute hidden group-hover:block bottom-full mb-2 right-0 md:left-1/2 md:-translate-x-1/2 w-48 p-2 bg-dark text-white text-xs rounded-lg shadow-lg z-50 md:text-center text-right">
+                    Emails que possuem formato válido (@ e domínio final).
+                  </div>
+                </div>
+              </div>
               <p className="text-3xl font-black text-dark">{rateEmailValid}%</p>
+              {getCompareBadge(parseFloat(rateEmailValid), parseFloat(rateEmailValidCompare), true)}
             </div>
           </div>
         </section>
 
         {/* Filters */}
-        <div className="bg-white p-4 md:p-6 rounded-3xl shadow-sm border border-dark/5 flex flex-col md:flex-row gap-4">
-          <div className="flex-1 relative">
+        <div className="bg-white p-4 md:p-6 rounded-3xl shadow-sm border border-dark/5 flex flex-col xl:flex-row gap-4">
+          <div className="flex-1 min-w-[200px] relative">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-dark/30" size={18} />
             <input 
               type="text" 
               placeholder="Pesquisar por nome, CPF, WhatsApp ou cidade..."
-              className="w-full pl-12 pr-4 py-3 rounded-xl border border-dark/10 focus:outline-none focus:ring-2 focus:ring-secondary/20 focus:border-secondary transition-all text-dark"
+              className="w-full pl-12 pr-4 py-3 rounded-xl border border-dark/10 focus:outline-none focus:ring-2 focus:ring-secondary/20 focus:border-secondary transition-all text-dark h-[46px]"
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
           </div>
-          <select 
-            className="px-4 py-3 rounded-xl border border-dark/10 focus:outline-none focus:ring-2 focus:ring-secondary/20 focus:border-secondary transition-all text-dark"
-            value={filterStatus}
-            onChange={e => setFilterStatus(e.target.value)}
-          >
-            <option key="all" value="all">Todos os Status</option>
-            <option key="active" value="active">Apenas Ativos</option>
-            <option key="cancelled" value="cancelled">Apenas Cancelados</option>
-          </select>
-          <select 
-            className="px-4 py-3 rounded-xl border border-dark/10 focus:outline-none focus:ring-2 focus:ring-secondary/20 focus:border-secondary transition-all text-dark"
-            value={filterCity}
-            onChange={e => setFilterCity(e.target.value)}
-          >
-            <option key="default" value="">Todas as Cidades (Endereço)</option>
-            {Array.from(new Set(registrations.map(r => r.city))).sort().map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
+          <div className="flex flex-col lg:flex-row gap-4">
+            <div className="flex flex-col sm:flex-row gap-4 w-full lg:w-auto">
+              <select 
+                className="px-4 py-3 w-full sm:w-auto rounded-xl border border-dark/10 focus:outline-none focus:ring-2 focus:ring-secondary/20 focus:border-secondary transition-all text-dark h-[46px]"
+                value={filterStatus}
+                onChange={e => setFilterStatus(e.target.value)}
+              >
+                <option key="all" value="all">Todos os Status</option>
+                <option key="active" value="active">Apenas Ativos</option>
+                <option key="cancelled" value="cancelled">Apenas Cancelados</option>
+              </select>
+              <select 
+                className="px-4 py-3 w-full sm:w-auto rounded-xl border border-dark/10 focus:outline-none focus:ring-2 focus:ring-secondary/20 focus:border-secondary transition-all text-dark h-[46px]"
+                value={filterCity}
+                onChange={e => setFilterCity(e.target.value)}
+              >
+                <option key="default" value="">Todas as Cidades (Endereço)</option>
+                {Array.from(new Set(registrations.map(r => r.city))).sort().map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            
+            <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto items-start">
+              <div className="flex flex-col gap-2 w-full sm:w-auto">
+                <div className="flex flex-col sm:flex-row gap-2 sm:items-center p-1 sm:p-0 bg-dark/5 sm:bg-transparent rounded-xl">
+                  <span className="text-sm text-dark/70 font-semibold px-2 sm:px-0 whitespace-nowrap hidden sm:block">Período:</span>
+                  <div className="flex gap-2 items-center w-full sm:w-auto">
+                    <input 
+                      type="date" 
+                      className="px-3 md:px-4 py-3 flex-1 sm:flex-none rounded-xl border border-dark/10 focus:outline-none focus:ring-2 focus:ring-secondary/20 focus:border-secondary transition-all text-dark text-sm bg-white h-[46px]"
+                      value={dateStart}
+                      onChange={e => setDateStart(e.target.value)}
+                    />
+                    <span className="text-sm text-dark/40 font-medium">até</span>
+                    <input 
+                      type="date" 
+                      className="px-3 md:px-4 py-3 flex-1 sm:flex-none rounded-xl border border-dark/10 focus:outline-none focus:ring-2 focus:ring-secondary/20 focus:border-secondary transition-all text-dark text-sm bg-white h-[46px]"
+                      value={dateEnd}
+                      onChange={e => setDateEnd(e.target.value)}
+                    />
+                  </div>
+                  <label className="flex items-center gap-2 text-sm text-dark/70 font-medium px-2 sm:px-4 cursor-pointer">
+                    <input type="checkbox" checked={isComparing} onChange={(e) => setIsComparing(e.target.checked)} className="rounded text-secondary focus:ring-secondary/20" />
+                    Comparar
+                  </label>
+                </div>
+
+                {isComparing && (
+                  <div className="flex flex-col sm:flex-row gap-2 sm:items-center p-1 sm:p-0 bg-dark/5 sm:bg-transparent rounded-xl">
+                    <span className="text-sm text-dark/70 font-semibold px-2 sm:px-0 whitespace-nowrap hidden sm:block">Comparar c/:</span>
+                    <div className="flex gap-2 items-center w-full sm:w-auto">
+                      <input 
+                        type="date" 
+                        className="px-3 md:px-4 py-3 flex-1 sm:flex-none rounded-xl border border-dark/10 focus:outline-none focus:ring-2 focus:ring-secondary/20 focus:border-secondary transition-all text-dark text-sm bg-white h-[46px]"
+                        value={compareStart}
+                        onChange={e => setCompareStart(e.target.value)}
+                      />
+                      <span className="text-sm text-dark/40 font-medium">até</span>
+                      <input 
+                        type="date" 
+                        className="px-3 md:px-4 py-3 flex-1 sm:flex-none rounded-xl border border-dark/10 focus:outline-none focus:ring-2 focus:ring-secondary/20 focus:border-secondary transition-all text-dark text-sm bg-white h-[46px]"
+                        value={compareEnd}
+                        onChange={e => setCompareEnd(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+              <button 
+                onClick={() => {
+                  setAppliedDateStart(dateStart);
+                  setAppliedDateEnd(dateEnd);
+                  setAppliedIsComparing(isComparing);
+                  setAppliedCompareStart(compareStart);
+                  setAppliedCompareEnd(compareEnd);
+                }}
+                className="bg-secondary text-dark font-bold px-4 rounded-xl h-[46px] hover:bg-secondary/90 transition-all w-full sm:w-auto mt-1 sm:mt-0 text-sm whitespace-nowrap"
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Table */}
@@ -1319,9 +1737,8 @@ function AdminDashboard() {
                     <td className="px-6 py-4 text-sm text-dark/50">
                       {(() => {
                         try {
-                          const safeStr = r.created_at.includes('T') ? r.created_at : r.created_at.replace(' ', 'T') + 'Z';
-                          const dt = new Date(safeStr);
-                          if (!isNaN(dt.getTime())) {
+                          const dt = tryParseDateStr(r.created_at);
+                          if (dt) {
                             return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' }).format(dt);
                           }
                         } catch {}
